@@ -4,7 +4,7 @@ import logging
 import random
 import uuid
 
-import time_uuid
+from cassandra.util import uuid_from_time, datetime_from_uuid1
 from cassandra.query import BatchStatement
 
 # Set logger
@@ -54,14 +54,50 @@ CREATE_SHIPMENTS_BY_O_SD_TABLE = """
     ) WITH CLUSTERING ORDER BY (shipment_date DESC)
 """
 
+# HW
 # Q3.3: shipments_by_o_ssd
+CREATE_SHIPMENTS_BY_O_SSD_TABLE = """   
+    CREATE TABLE IF NOT EXISTS shipments_by_o_ssd(
+        order_number TEXT,
+        shipment_date TIMEUUID,
+        tracking_number TEXT,
+        status TEXT,
+        type TEXT,
+        total_amount FLOAT,
+        customer_name TEXT,
+        PRIMARY KEY((order_number, status), shipment_date)
+    ) WITH CLUSTERING ORDER BY (shipment_date DESC);
+"""
 
-
+# HW
 # Q3.4: shipments_by_o_tsd
+CREATE_SHIPMENTS_BY_O_TSD_TABLE = """
+    CREATE TABLE IF NOT EXISTS shipments_by_o_tsd(
+        order_number TEXT,
+        shipment_date TIMEUUID,
+        tracking_number TEXT,
+        status TEXT,
+        type TEXT,
+        total_amount FLOAT,
+        customer_name TEXT,
+        PRIMARY KEY((order_number, type), shipment_date)
+    ) WITH CLUSTERING ORDER BY (shipment_date DESC);
+"""
 
-
+# HW
 # Q3.5: shipments_by_o_tssd
-
+CREATE_SHIPMENTS_BY_O_TSSD_TABLE = """
+    CREATE TABLE IF NOT EXISTS shipments_by_o_tssd(
+        order_number TEXT,
+        shipment_date TIMEUUID,
+        tracking_number TEXT,
+        status TEXT,
+        type TEXT,
+        total_amount FLOAT,
+        customer_name TEXT,
+        PRIMARY KEY((order_number, type, status), shipment_date)
+    ) WITH CLUSTERING ORDER BY (shipment_date DESC)
+"""
 
 # Query statements 
 # Q1
@@ -71,23 +107,53 @@ SELECT_ORDERS_BY_CUSTOMER = """
     WHERE email = ?
 """
 
+# HW
 # Q2
+SELECT_PRODUCT_BY_ORDER = """
+    SELECT order_number, product_name, category, price, quantity
+    FROM products_by_order
+    WHERE order_number = ?
+"""
 
-
+# HW
 # Q3.1: All shipments (no date filter)
+SELECT_SHIPMENTS_BY_O_SD = """
+    SELECT order_number, toDate(shipment_date) as shipment_date_readable, tracking_number, status, type, total_amount, customer_name
+    FROM shipments_by_o_sd
+    WHERE order_number = ?
+"""
 
-
+# HW
 # Q3.2: Same as Q3.1 (with date range)
+SELECT_SHIPMENTS_BY_O_SD_DATE_RANGE = """
+    SELECT order_number, toDate(shipment_date) as shipment_date_readable, tracking_number, status, type, total_amount, customer_name
+    FROM shipments_by_o_sd
+    WHERE order_number = ? AND shipment_date >= minTimeuuid(?) AND shipment_date <= maxTimeuuid(?)
+"""
 
-
+#HW
 # Q3.3: Shipments by status with date range
+SELECT_SHIPMENTS_BY_O_SSD = """
+    SELECT order_number, toDate(shipment_date) as shipment_date_readable, tracking_number, status, type, total_amount, customer_name
+    FROM shipments_by_o_ssd
+    WHERE order_number = ? AND status = ? AND shipment_date >= minTimeuuid(?) AND shipment_date <= maxTimeuuid(?)
+"""
 
-
+# HW
 # Q3.4: Shipments by type with date range
+SELECT_SHIPMENTS_BY_O_TSD = """
+    SELECT order_number, toDate(shipment_date) as shipment_date_readable, tracking_number, status, type, total_amount, customer_name
+    FROM shipments_by_o_tsd
+    WHERE order_number = ? AND type = ? AND shipment_date >= minTimeuuid(?) AND shipment_date <= maxTimeuuid(?)
+"""
 
-
+# HW
 # Q3.5: Shipments by type and status with date range
-
+SELECT_SHIPMENTS_BY_O_TSSD = """
+    SELECT order_number, toDate(shipment_date) as shipment_date_readable, tracking_number, status, type, total_amount, customer_name
+    FROM shipments_by_o_tssd
+    WHERE order_number = ? AND type = ? AND status = ? AND shipment_date >= minTimeuuid(?) AND shipment_date <= maxTimeuuid(?)
+"""
 
 # Sample data
 CUSTOMERS = [
@@ -118,13 +184,30 @@ PRODUCTS = [
 ]
 
 ORDER_STATUSES = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled']
-SHIPMENT_STATUSES = ['Pending', 'Shipped', 'In Transit', 'Out for Delivery', 'Delivered', 'Delayed', 'Returned']
+SHIPMENT_STATUSES = ["Pending", "Shipped", "In Transit", "Out for Delivery", "Delivered", "Delayed", "Returned"]
 SHIPMENT_TYPES = ['Standard', 'Express', 'Same-day']
 
+# HW
 # Get date range from user input or use default (last 30 days)
 # Default to last 30 days if not provided
-def get_date_range():
-    pass
+def get_date_range(start_date="", end_date=""):
+    if start_date == "" and end_date == "":
+        end_date = datetime.datetime.utcnow()
+        start_date = end_date - datetime.timedelta(days=30)
+    elif end_date == "":
+        start_date = datetime.datetime.strptime(start_date, '%Y-%m-%d')
+        end_date = start_date + datetime.timedelta(days=30)
+    elif start_date == "":
+        end_date = datetime.datetime.strptime(end_date, '%Y-%m-%d')
+        start_date = end_date - datetime.timedelta(days=30)
+    else:
+        start_date = datetime.datetime.strptime(start_date, '%Y-%m-%d')
+        end_date = datetime.datetime.strptime(end_date, '%Y-%m-%d')
+
+    end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return start_date, end_date
+
+
 
 def execute_batch(session, stmt, data):
     batch_size = 10
@@ -139,7 +222,11 @@ def bulk_insert(session):
     orders_stmt = session.prepare("INSERT INTO orders_by_customers (email, order_date, name, order_number, total_amount, status) VALUES (?, ?, ?, ?, ?, ?)")
     products_stmt = session.prepare("INSERT INTO products_by_order (order_number, price, product_name, category, quantity) VALUES (?, ?, ?, ?, ?)")
     shipments_sd_stmt = session.prepare("INSERT INTO shipments_by_o_sd (order_number, shipment_date, tracking_number, status, type, total_amount, customer_name) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    
     # INSERT STATEMENTS
+    shipments_ssd_stmt = session.prepare("INSERT INTO shipments_by_o_ssd (order_number, shipment_date, tracking_number, status, type, total_amount, customer_name) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    shipments_tsd_stmt = session.prepare("INSERT INTO shipments_by_o_tsd (order_number, shipment_date, tracking_number, status, type, total_amount, customer_name) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    shipments_tssd_stmt = session.prepare("INSERT INTO shipments_by_o_tssd (order_number, shipment_date, tracking_number, status, type, total_amount, customer_name) VALUES (?, ?, ?, ?, ?, ?, ?)")
     
     orders_num = 100
     products_per_order = 3
@@ -184,14 +271,17 @@ def bulk_insert(session):
     # Insert into all shipment tables (same data, same order)
     execute_batch(session, shipments_sd_stmt, shipments_data)
     # ADD EXECUTE STATEMENTS
+    execute_batch(session, shipments_ssd_stmt, shipments_data)
+    execute_batch(session, shipments_tsd_stmt, shipments_data)
+    execute_batch(session, shipments_tssd_stmt, shipments_data)
 
 def random_date(start_date, end_date):
-    """Generate a random date between start_date and end_date"""
+    """Generate a random timeuuid between start_date and end_date"""
     time_between_dates = end_date - start_date
     days_between_dates = time_between_dates.days
     random_number_of_days = random.randrange(days_between_dates)
     rand_date = start_date + datetime.timedelta(days=random_number_of_days)
-    return time_uuid.TimeUUID.with_timestamp(time_uuid.mkutime(rand_date))
+    return uuid_from_time(rand_date)
 
 def create_keyspace(session, keyspace, replication_factor):
     log.info(f"Creating keyspace: {keyspace} with replication factor {replication_factor}")
@@ -203,6 +293,9 @@ def create_schema(session):
     session.execute(CREATE_PRODUCTS_BY_ORDER_TABLE)
     session.execute(CREATE_SHIPMENTS_BY_O_SD_TABLE)
     # ADD CREATE TABLES
+    session.execute(CREATE_SHIPMENTS_BY_O_TSSD_TABLE)
+    session.execute(CREATE_SHIPMENTS_BY_O_SSD_TABLE)
+    session.execute(CREATE_SHIPMENTS_BY_O_TSD_TABLE)
 
 # Q1: Get orders by customer
 def get_orders_by_customer(session, email):
@@ -219,20 +312,108 @@ def get_orders_by_customer(session, email):
         print(f"  - Status: {row.status}")
         print()
 
+# HW
 # Q2: Get products by order
+def get_products_by_order(session, order_number):
+    log.info(f"Retrieving products for order: {order_number}")
+    stmt = session.prepare(SELECT_PRODUCT_BY_ORDER)
+    rows = session.execute(stmt, [order_number])
 
+    print(f"\n=== Products for order: {order_number} ===")
+    for row in rows:
+        print(f"Product: {row.product_name}")
+        print(f"  - Category: {row.category}")
+        print(f"  - Price: ${row.price:,.2f}")
+        print(f"  - Quantity: {row.quantity}")
+        print()
 
+# HW
 # Q3.1: Get all shipments by order (no date filter)
+def get_shipments_by_order(session, order_number):
+    log.info(f"Retrieving shipments for order: {order_number}")
+    stmt = session.prepare(SELECT_SHIPMENTS_BY_O_SD)
+    rows = session.execute(stmt, [order_number])
 
+    print(f"\n=== Shipments for order: {order_number} ===")
+    for row in rows:
+        print(f"Shipment Date: {row.shipment_date_readable}")
+        print(f"  - Tracking Number: {row.tracking_number}")
+        print(f"  - Status: {row.status}")
+        print(f"  - Type: {row.type}")
+        print(f"  - Amount: ${row.total_amount:,.2f}")
+        print(f"  - Customer: {row.customer_name}")
+        print()
 
+# HW
 # Q3.2: Same as Q3.1 (with explicit date range)
+def get_shipments_by_order_date_range(session, order_number, start_date, end_date):
+    log.info(f"Retrieving shipments for order: {order_number} with date range")
+    start_dt, end_dt = get_date_range(start_date, end_date)
+    stmt = session.prepare(SELECT_SHIPMENTS_BY_O_SD_DATE_RANGE)
+    rows = session.execute(stmt, [order_number, start_dt, end_dt])
 
+    print(f"\n=== Shipments for order: {order_number} from {start_dt} to {end_dt} ===")
+    print(f"Query: {stmt.query_string}")  # Debug: muestra la query preparada
+    for row in rows:
+        print(f"Shipment Date: {row.shipment_date_readable}")
+        print(f"  - Tracking Number: {row.tracking_number}")
+        print(f"  - Status: {row.status}")
+        print(f"  - Type: {row.type}")
+        print(f"  - Amount: ${row.total_amount:,.2f}")
+        print(f"  - Customer: {row.customer_name}")
+        print()
 
 # Q3.3: Get shipments by order and status with date range
+def get_shipments_by_order_status_date_range(session, order_number, status, start_date="", end_date=""):
+    log.info(f"Retrieving shipments for order: {order_number}, status: {status} with date range")
+    start_dt, end_dt = get_date_range(start_date, end_date)
+
+    stmt = session.prepare(SELECT_SHIPMENTS_BY_O_SSD)
+    rows = session.execute(stmt, [order_number, status, start_dt, end_dt])
+
+    print(f"\n=== Shipments for order: {order_number}, status: {status} from {start_dt} to {end_dt} ===")
+    for row in rows:
+        print(f"Shipment Date: {row.shipment_date_readable}")
+        print(f"  - Tracking Number: {row.tracking_number}")
+        print(f"  - Status: {row.status}")
+        print(f"  - Type: {row.type}")
+        print(f"  - Amount: ${row.total_amount:,.2f}")
+        print(f"  - Customer: {row.customer_name}")
+        print()
 
 
 # Q3.4: Get shipments by order and type with date range
+def get_shipments_by_order_type_date_range(session, order_number, ship_type, start_date="", end_date=""):
+    log.info(f"Retrieving shipments for order: {order_number}, type: {ship_type} with date range")
+    start_dt, end_dt = get_date_range(start_date, end_date)
+    stmt = session.prepare(SELECT_SHIPMENTS_BY_O_TSD)
+    rows = session.execute(stmt, [order_number, ship_type, start_dt, end_dt])
+
+    print(f"\n=== Shipments for order: {order_number}, type: {ship_type} from {start_dt} to {end_dt} ===")
+    for row in rows:
+        print(f"Shipment Date: {row.shipment_date_readable}")
+        print(f"  - Tracking Number: {row.tracking_number}")
+        print(f"  - Status: {row.status}")
+        print(f"  - Type: {row.type}")
+        print(f"  - Amount: ${row.total_amount:,.2f}")
+        print(f"  - Customer: {row.customer_name}")
+        print()
 
 
 # Q3.5: Get shipments by order, type and status with date range
+def get_shipments_by_order_type_status_date_range(session, order_number, ship_type, status, start_date="", end_date=""):
+    log.info(f"Retrieving shipments for order: {order_number}, type: {ship_type}, status: {status} with date range")
+    start_dt, end_dt = get_date_range(start_date, end_date)
+    stmt = session.prepare(SELECT_SHIPMENTS_BY_O_TSSD)
+    rows = session.execute(stmt, [order_number, ship_type, status, start_dt, end_dt])
+
+    print(f"\n=== Shipments for order: {order_number}, type: {ship_type}, status: {status} from {start_dt} to {end_dt} ===")
+    for row in rows:
+        print(f"Shipment Date: {row.shipment_date_readable}")
+        print(f"  - Tracking Number: {row.tracking_number}")
+        print(f"  - Status: {row.status}")
+        print(f"  - Type: {row.type}")
+        print(f"  - Amount: ${row.total_amount:,.2f}")
+        print(f"  - Customer: {row.customer_name}")
+        print()
 

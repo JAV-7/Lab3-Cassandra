@@ -49,13 +49,19 @@ def get_order_number():
 
 def get_shipment_status():
     print(f"\nAvailable statuses: {', '.join(model.SHIPMENT_STATUSES)}")
-    status = input('Enter shipment status: ').strip()
-    return status
+    while True:
+        status = input('Enter shipment status: ').strip()
+        if status in model.SHIPMENT_STATUSES:
+            return status
+        print("Invalid status, please choose exactly one from the list.")
 
 def get_shipment_type():
     print(f"\nAvailable types: {', '.join(model.SHIPMENT_TYPES)}")
-    ship_type = input('Enter shipment type: ').strip()
-    return ship_type
+    while True:
+        ship_type = input('Enter shipment type: ').strip()
+        if ship_type in model.SHIPMENT_TYPES:
+            return ship_type
+        print("Invalid status, please choose exactly one from the list.")
 
 def main():
     log.info("Connecting to Cluster")
@@ -69,6 +75,7 @@ def main():
 
     customer_email = set_customer_email()
 
+    # HW
     while(True):
         print("\n" + "="*50)
         print_menu()
@@ -88,22 +95,46 @@ def main():
             model.get_orders_by_customer(session, customer_email)
 
         elif option == 2:
-            pass
+            order_number = get_order_number()
+            print(f"\nQ2: Getting products by order: {order_number}")
+            model.get_products_by_order(session, order_number)
 
         elif option == 3:
-            pass
+            order_number = get_order_number()
+            print(f"\nQ3.1: Getting all shipments by order: {order_number}")
+            model.get_shipments_by_order(session, order_number)
 
         elif option == 4:
-            pass
+            order_number = get_order_number()
+            print(f"\nQ3.2: Getting shipments by order with date range: {order_number}")
+            start_date = input('Enter start date (YYYY-MM-DD): ').strip()
+            end_date = input('Enter end date (YYYY-MM-DD): ').strip()
+            model.get_shipments_by_order_date_range(session, order_number, start_date, end_date)
 
         elif option == 5:
-            pass
+            order_number = get_order_number()
+            status = get_shipment_status()
+            print(f"\nQ3.3: Getting shipments by order and status with date range: {order_number}, {status}")
+            start_date = input('Enter start date (YYYY-MM-DD): ').strip()
+            end_date = input('Enter end date (YYYY-MM-DD): ').strip()
+            model.get_shipments_by_order_status_date_range(session, order_number, status, start_date, end_date) 
 
         elif option == 6:
-            pass
+            order_number = get_order_number()
+            ship_type = get_shipment_type()
+            print(f"\nQ3.4: Getting shipments by order and type with date range: {order_number}, {ship_type}")
+            start_date = input('Enter start date (YYYY-MM-DD): ').strip()
+            end_date = input('Enter end date (YYYY-MM-DD): ').strip()
+            model.get_shipments_by_order_type_date_range(session, order_number, ship_type, start_date, end_date)
 
         elif option == 7:
-            pass
+            order_number = get_order_number()
+            ship_type = get_shipment_type()
+            status = get_shipment_status()
+            print(f"\nQ3.5: Getting shipments by order, type and status with date range: {order_number}, {ship_type}, {status}")
+            start_date = input('Enter start date (YYYY-MM-DD): ').strip()
+            end_date = input('Enter end date (YYYY-MM-DD): ').strip()
+            model.get_shipments_by_order_type_status_date_range(session, order_number, ship_type, status, start_date, end_date)
 
         elif option == 8:
             customer_email = set_customer_email()
